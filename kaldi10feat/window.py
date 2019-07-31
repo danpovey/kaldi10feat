@@ -3,7 +3,8 @@ import math
 import numpy as np
 
 """
-This module contains functions for windowing.
+This module contains functions for windowing.  The main user-level functions
+are window_size_in_samples(), povey_window() and extract_windows()
 """
 
 def window_size_in_samples(sampling_rate, window_size_ms=25):

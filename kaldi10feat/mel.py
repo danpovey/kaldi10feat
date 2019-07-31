@@ -1,6 +1,7 @@
 
 import math
 import numpy as np
+import .window
 
 """
 This module contains functions for mel-scale computations and
@@ -68,3 +69,33 @@ def compute_mel_banks(num_fft_bins,
                           (right_mel-mel) / (right_mel-center_mel))
                 ans[b, i] = weight
     return ans
+
+
+class MelFeatureComputer:
+    """
+    Object to compute log mel filterbank energies compatible with those
+    produced by kaldi10
+    """
+    def __init__(self, sampling_rate = 16000, window_size_ms = 25,
+                 frame_shift_ms = 10, num_mel_bins = 40,
+                 low_freq = 20, high_freq = 0):
+
+        self.window = window.povey_window(
+            window.window_size_in_samples(sampling_rate, window_size_ms))
+        num_fft_samples = window.round_up_to_power_of_two(len(self.window))
+        num_fft_bins = num_fft_samples // 2
+        self.mel_banks = compute_mel_banks(num_fft_bins, sampling_rate,
+                                           num_mel_bins, low_freq=low_freq,
+                                           high_freq=high_freq)
+
+    def compute(signal):
+        """
+        Compute and return log-mel-filterbank energies.
+
+        Args:
+          signal  The input signal, as a NumPy array with shape (num_samples,).  If the dtype
+                  is int16, the samples will be divided by 32768 as they are obtained.
+                  Otherwise the dtype is expected to be np.float32, although np.double
+                  should work as well.
+
+        """

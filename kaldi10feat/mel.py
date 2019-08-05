@@ -1,11 +1,11 @@
 
 import math
 import numpy as np
-import .window
+from . import window
 
 """
-This module contains functions for mel-scale computations and
-mel-scale filterbank extraction
+This module contains functions for mel-scale computations and mel-scale
+filterbank extraction
 """
 
 
@@ -84,11 +84,18 @@ class MelFeatureComputer:
             window.window_size_in_samples(sampling_rate, window_size_ms))
         num_fft_samples = window.round_up_to_power_of_two(len(self.window))
         num_fft_bins = num_fft_samples // 2
-        self.mel_banks = compute_mel_banks(num_fft_bins, sampling_rate,
-                                           num_mel_bins, low_freq=low_freq,
-                                           high_freq=high_freq)
+        self.mel_banks_transposed = compute_mel_banks(num_fft_bins,
+                                                      sampling_rate,
+                                                      num_mel_bins,
+                                                      low_freq=low_freq,
+                                                      high_freq=high_freq).transpose()
+        self.frame_shift_in_samples = window.frame_shift_in_samples(
+            sampling_rate, frame_shift_ms)
+        self.padded_window_length = window.round_up_to_power_of_two(len(self.window))
+        self.energy_floor = 1.0e-09 * math.sqrt(len(self.window))
 
-    def compute(signal):
+
+    def compute(self, signal):
         """
         Compute and return log-mel-filterbank energies.
 
@@ -98,4 +105,24 @@ class MelFeatureComputer:
                   Otherwise the dtype is expected to be np.float32, although np.double
                   should work as well.
 
+        Return:
+
         """
+        windowed_signal = window.extract_windows(signal,
+                                                 self.window,
+                                                 self.frame_shift_in_samples,
+                                                 round_to_power_of_two = True)
+
+        n = self.padded_window_length
+        n2 = n // 2
+        fft = np.fft.rfft(windowed_signal, n=n)
+
+        # The part of the power spectrum we want will be an array of size
+        # num_frames by n2.  We discard the extra dimension which would have
+        # taken us to n2+1, which was the energy at the Nyquist.
+        power_spectrum = (fft.real[:,0:n2] ** 2 + fft.imag[:,0:n2] **2).astype('float32')
+
+        np.maximum(self.energy_floor, power_spectrum, out=power_spectrum)
+
+        return np.log(np.dot(power_spectrum, self.mel_banks_transposed))
+

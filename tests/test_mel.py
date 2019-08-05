@@ -18,6 +18,22 @@ class TestMel(unittest.TestCase):
         np.set_printoptions(threshold=sys.maxsize)
         print("{}".format(mel))
 
+    def test_feature_computer(self):
+        signal_length = 800
+        mel_computer = MelFeatureComputer(16000)
+
+        for dtype in ['float32', 'float64', 'int16']:
+            signal = (100.0 * np.random.randn(signal_length).astype(dtype))
+            foo = mel_computer.compute(signal)
+            print("dtype={} log-mel={}".format(signal, foo))
+
+        signal = (100.0 * np.random.randn(signal_length)).astype('int16')
+        sum1 = mel_computer.compute(signal).sum()
+        sum2 = mel_computer.compute(signal.astype('float32')).sum()
+        print("{} and {} should differ (checking for int16 scaling)".format(
+                sum1, sum2))
+
 
 if __name__ == "__main__":
     unittest.main()
+

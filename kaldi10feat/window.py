@@ -87,6 +87,8 @@ def get_num_frames(num_samples,
            isinstance(window_size_in_samples, int) and isinstance(flush, bool))
 
     num_frames = (num_samples + (frame_shift_in_samples // 2)) // frame_shift_in_samples
+    if not isinstance(num_frames, int):
+        raise ValueError("expected integer num_frames")
     if flush:
         return num_frames
     else:
@@ -162,6 +164,9 @@ def extract_windows(signal,
             (signal.dtype in [ np.int16, np.float32, np.float64 ]))
     assert (isinstance(window, np.ndarray) and window.ndim == 1 and
             (signal.dtype in [ np.int16, np.float32, np.float64 ]))
+    assert isinstance(frame_shift_in_samples, int)
+    assert isinstance(flush, bool)
+    assert isinstance(round_to_power_of_two, bool)
 
     window_size = window.shape[0]
     num_samples = signal.shape[0]
@@ -174,13 +179,6 @@ def extract_windows(signal,
                           if round_to_power_of_two else
                           window_size)
 
-
-    window_internal = np.zeros((padded_window_size,), dtype=np.float32)
-    if signal.dtype is np.float64:
-        window_internal = np.zeros((padded_window_size,), dtype=np.float64)
-    else:
-        window_internal = np.zeros((padded_window_size,), dtype=np.float32)
-    window_internal[0:window_size] = (window * ((1.0/32768) if signal.dtype == np.int16 else 1.0))
     ans = np.empty((num_frames, padded_window_size), dtype=np.float32)
 
     if padded_window_size > window_size:
@@ -189,11 +187,10 @@ def extract_windows(signal,
 
     # num_edge_frames is a big overestimate of how many frames at each
     # side might have to be treated as edge cases
-    num_edge_frames = window_size / window_size
-
+    num_edge_frames = window_size // frame_shift_in_samples
 
     # The following loop only handles frames near the edge, inefficiently.
-    for frame in list(range(0,num_edge_frames)) + list(range(num_frames - num_edge_frames, num_frames)):
+    for frame in list(range(0, num_edge_frames)) + list(range(num_frames - num_edge_frames, num_frames)):
         if frame < 0 or frame >= num_frames:
             continue
         first_sample = first_sample_of_frame(frame,
@@ -207,12 +204,21 @@ def extract_windows(signal,
         offset1 = first_sample_truncated - first_sample
         offset2 = end_sample_truncated - first_sample
 
+        # the following statement would only make a difference in
+        # super-pathological cases where the num-samples is less than a frame's
+        # worth.
         ans[frame,:].fill(0)
+
         # we must have first_sample_truncated < end_sample_truncated since
         # we checked that the signal is nonempty.
-        print(ans.shape)
-        print(signal.shape)
         ans[frame, offset1:offset2] = signal[first_sample_truncated:end_sample_truncated]
+
+        # For edge effects, we use reflection.
+        if offset1 > 0:
+            ans[frame, offset1-1::-1] = ans[frame, offset1:2*offset1]
+        if offset2 < window_size:
+            k = window_size - offset2
+            ans[frame, window_size-1:offset2-1:-1] = ans[frame, offset2-k:offset2]
 
 
     # The loop below will handle frames in range(num_edge_frames, num_frames -
@@ -240,5 +246,11 @@ def extract_windows(signal,
         ans[num_edge_frames : num_frames-num_edge_frames,
                    start_offset : end_offset] = signal_reshaped[:, 0:num_cols]
 
-    ans[:,0:window_size] *= window
+
+    # Remove the DC offset from each window (prior to applying the window
+    # function).  This is the --remove-dc-offset option in Kaldi, which defaults
+    # to true.
+    ans[:,0:window_size] -= ans[:,0:window_size].sum(axis=1, keepdims=True) * (1.0 / window_size)
+
+    ans[:,0:window_size] *= window * ((1.0/32768) if signal.dtype == np.int16 else 1.0)
     return ans
